@@ -30,22 +30,6 @@ def get_logger(level=INFO):
 
 LOG = get_logger()
 
-def get_args():
-    CLI= """
-    USAGE:
-        barcode-reader.py [options] -o OUTDIR INPUT_IMAGE ...
-
-    OPTIONS:
-        -t THREADS      Number of threads [default: 1]
-        -o OUTDIR       Output directory (creates subdirectories under here)
-        -a              Ask if we can't automatically get some data (NOT IMPLEMENTED)
-    """
-    opts = docopt(CLI)
-    return {"inputs": opts["INPUT_IMAGE"],
-            "output_dir": opts["-o"],
-            #"ask": opts["-a"],
-            "threads": int(opts['-t'])}
-
 
 def get_qrcode(image):
     x, y = image.size
@@ -158,4 +142,14 @@ def main(inputs, output_dir, threads=1):
                 print(*result, file=fh, sep="\t")
 
 if __name__ == "__main__":
-    main(**get_args())
+    CLI= """
+    USAGE:
+        envelope-demuxer.py [options] -o OUTDIR INPUT_IMAGE ...
+
+    OPTIONS:
+        -t THREADS      Number of threads [default: 1]
+        -o OUTDIR       Output directory (creates subdirectories under here)
+        -a              Ask if we can't automatically get some data (NOT IMPLEMENTED)
+    """
+    opts = docopt(CLI)
+    main(opts["INPUT_IMAGE"], opts['-o'], threads=int(opts['-t']))
