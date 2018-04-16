@@ -76,7 +76,7 @@ def show_image(image):
     plt.show()
 
 
-N2W = ['{}{:02d}'.format(a, i) for a in "ABCDEFGH" for i in range(1,13)]
+N2W = ['{}{:02d}'.format(a, i) for i in range(1,13) for a in "ABCDEFGH"]
 W2N = {w: i for i, w in enumerate(N2W)}
 
 
@@ -132,11 +132,12 @@ class Capturer(object):
                 plate = ask_default("Which plate?", default=self.plate)
                 # Increment well number, ask to confirm
                 while True:
-                    well = N2W[self.well + 1 % 96]
+                    well = N2W[(self.well + 1) % 96]
                     well = ask_default("Which well?", default=well)
                     if well not in W2N:
                         print("Invalid well:", well, "(must be like A01)")
-                    break
+                    else:
+                        break
 
                 platewell = (plate, well)
                 if not platewell in self.platewell:
