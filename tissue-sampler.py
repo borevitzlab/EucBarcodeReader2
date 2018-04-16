@@ -42,6 +42,7 @@ def qrdecode(image):
 
 
 def capture_image():
+    """Captures images from camera using gphoto CLI"""
     capture_cmd = "gphoto2 --capture-image-and-download --stdout".split()
 
     proc = sp.Popen(capture_cmd, stdout=sp.PIPE, stderr=sp.PIPE)
@@ -55,7 +56,14 @@ def capture_image():
     if proc.returncode != 0:
         if ask_yesno("Image capture failed. Retry?"):
             return capture_image()
+        else:
+            return None
     return out
+
+# for debugging, replace above with:
+#def capture_image():
+#    with open("data/test-image.jpg", "rb") as fh:
+#        return fh.read()
 
 
 def show_image(image):
@@ -67,22 +75,25 @@ def show_image(image):
     plt.show()
 
 
+N2W = ['{}{:02d}'.format(a, i) for a in "ABCDEFGH" for i in range(1,13)]
+W2N = {w: i for i, w in enumerate(N2W)}
+
 
 class Capturer(object):
-    """Captures images from camera using gphoto CLI"""
 
     def __init__(self, imagedir, samplecsv):
         os.makedirs(imagedir, exist_ok=False)
         self.imagedir = imagedir
         self.sample_csv = samplecsv
         with open(self.sample_csv, "w") as fh:
-            print("sample_id", "tube_id", sep=',', file=fh)
-        self.well = 0
+            print("sample_id", "plate", "well", sep=',', file=fh)
+        self.well = -1
+        self.plate = ""
+        self.samples = set()
 
     def capture_sample(self):
         images = []
         sample_id = None
-        tube_id = None
         try:
             while True:
                 img_jpg = capture_image()
@@ -90,14 +101,27 @@ class Capturer(object):
                 img = Image.open(io.BytesIO(img_jpg))
                 if ask_yesno("Show image?"):
                     show_image(img)
-                if sample_id is None:
+                if sample_id is None or sample_id == "":
                     sid = qrdecode(img)
                     if sid is None:
                         sid = ""
                     sample_id = ask_default("Sample name is", sid)
+                    while sample_id in self.samples:
+                        print("ERROR: duplicate sample ID. Something's fishy")
+                        sample_id = ask_default("Sample name is", sid)
+                    self.samples.add(sample_id)
                 if not ask_yesno("Capture another image?"):
                     break
-            tube_id = ask_default("What's the tube label?", default=sample_id)
+            self.plate = ask_default("Which plate?", default=self.plate)
+            # Increment well number, ask to confirm
+            while True:
+                try:
+                    w = N2W[self.well + 1 % 96]
+                    w = ask_default("Which well?", default=w)
+                    self.well = W2N[w]
+                    break
+                except (KeyError, IndexError):
+                    print("Invalid well:", w, "(must be like A01)")
         except KeyboardInterrupt:
             pass
         finally:
@@ -113,18 +137,19 @@ class Capturer(object):
                     fh.write(jpgbytes)
             # Append to sample CSV
             with open(self.sample_csv, "a") as fh:
-                print(sample_id, tube_id, sep=",", file=fh)
+                print(sample_id, self.plate, N2W[self.well], sep=",", file=fh)
 
     def main(self):
         while True:
             try:
-                print("Press enter to start sample capture, or 'exit' to exit..", end="")
-                res = input()
-                if res.strip().lower() == "exit":
+                print("\nPress enter to start sample capture, or 'exit' to exit...  ", end="")
+                res = input().strip()
+                if res == "":
+                    self.capture_sample()
+                elif res.lower() == "exit":
                     break
             except (KeyboardInterrupt, EOFError):
                 break
-            self.capture_sample()
 
 
 if __name__ == "__main__":
