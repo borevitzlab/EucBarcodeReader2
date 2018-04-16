@@ -6,6 +6,7 @@ import readline
 import io
 import os
 import os.path as op
+import csv
 
 
 def ask_yesno(prompt, default=True):
@@ -81,27 +82,40 @@ W2N = {w: i for i, w in enumerate(N2W)}
 
 class Capturer(object):
 
-    def __init__(self, imagedir, samplecsv):
-        os.makedirs(imagedir, exist_ok=False)
-        self.imagedir = imagedir
-        self.sample_csv = samplecsv
-        with open(self.sample_csv, "w") as fh:
-            print("sample_id", "plate", "well", sep=',', file=fh)
-        self.well = -1
-        self.plate = ""
+    def __init__(self, outdir):
+        os.makedirs(outdir, exist_ok=True)
+        self.outdir = outdir
+        self.sample_csv = outdir + "/samples.csv"
         self.samples = set()
+        self.platewell = set()
+        self.plate = ""
+        self.well = -1
+        if not op.exists(self.sample_csv):
+            with open(self.sample_csv, "w") as fh:
+                print("sample_id", "plate", "well", 'has_seed', sep=',', file=fh)
+        else:
+            # Read list of existing sample & plate/well from CSV
+            for rec in csv.DictReader(open(self.sample_csv)):
+                print(rec)
+                self.samples.add(rec["sample_id"])
+                self.platewell.add((rec["plate"], rec["well"]))
+            # set to last record
+            self.plate = rec["plate"]
+            self.well = W2N.get(rec["well"], -1)
+            print("Read", len(self.samples), "existing samples from output directory")
 
     def capture_sample(self):
         images = []
         sample_id = None
+        has_seed = False
         try:
             while True:
                 img_jpg = capture_image()
                 images.append(img_jpg)
                 img = Image.open(io.BytesIO(img_jpg))
-                if ask_yesno("Show image?"):
+                if ask_yesno("Show image?", False):
                     show_image(img)
-                if sample_id is None or sample_id == "":
+                while sample_id is None or sample_id == "":
                     sid = qrdecode(img)
                     if sid is None:
                         sid = ""
@@ -109,35 +123,46 @@ class Capturer(object):
                     while sample_id in self.samples:
                         print("ERROR: duplicate sample ID. Something's fishy")
                         sample_id = ask_default("Sample name is", sid)
-                    self.samples.add(sample_id)
-                if not ask_yesno("Capture another image?"):
+                self.samples.add(sample_id)
+                if not ask_yesno("Capture another image?", False):
                     break
-            self.plate = ask_default("Which plate?", default=self.plate)
-            # Increment well number, ask to confirm
+            plate = None
+            well = None
             while True:
-                try:
-                    w = N2W[self.well + 1 % 96]
-                    w = ask_default("Which well?", default=w)
-                    self.well = W2N[w]
+                plate = ask_default("Which plate?", default=self.plate)
+                # Increment well number, ask to confirm
+                while True:
+                    well = N2W[self.well + 1 % 96]
+                    well = ask_default("Which well?", default=well)
+                    if well not in W2N:
+                        print("Invalid well:", well, "(must be like A01)")
                     break
-                except (KeyError, IndexError):
-                    print("Invalid well:", w, "(must be like A01)")
+
+                platewell = (plate, well)
+                if not platewell in self.platewell:
+                    self.plate = plate
+                    self.well = W2N[well]
+                    self.platewell.add(platewell)
+                    break
+                else:
+                    print("ERROR: this plate and well used already. Something's very fishy")
+            has_seed = ask_yesno("Does this sample have seed?")
         except KeyboardInterrupt:
             pass
-        finally:
-            if sample_id is None or sample_id == "":
-                return
-            # Make image dir
-            imagedir = op.join(self.imagedir, sample_id)
-            os.makedirs(imagedir, exist_ok=False)
-            # Write images
-            for i, jpgbytes in enumerate(images):
-                fn = op.join(imagedir, "{:02d}.jpg".format(i))
-                with open(fn, "wb") as fh:
-                    fh.write(jpgbytes)
-            # Append to sample CSV
-            with open(self.sample_csv, "a") as fh:
-                print(sample_id, self.plate, N2W[self.well], sep=",", file=fh)
+        if sample_id is None or sample_id == "":
+            return
+        # Make image dir
+        imagedir = op.join(self.outdir, sample_id)
+        os.makedirs(imagedir, exist_ok=False)
+        # Write images
+        for i, jpgbytes in enumerate(images):
+            fn = op.join(imagedir, "{:02d}.jpg".format(i))
+            with open(fn, "wb") as fh:
+                fh.write(jpgbytes)
+        # Append to sample CSV
+        seed = "Yes" if has_seed else "No"
+        with open(self.sample_csv, "a") as fh:
+            print(sample_id, self.plate, N2W[self.well], seed, sep=",", file=fh)
 
     def main(self):
         while True:
@@ -155,16 +180,11 @@ class Capturer(object):
 if __name__ == "__main__":
     DOC = """
     USAGE:
-        tissue-sampler.py -c CSV -d OUTDIR
+        tissue-sampler.py OUTDIR
 
-    OPTIONS:
-        -d OUTDIR   Image output directory (base of per-sample image directories).
-        -c CSV      Sample -> Tube ID mapping CSV filename (will be overwritten).
+    The output directory will contain a directory of images for each sample, as
+    well as a CSV of all samples and their plate coordinates.
     """
     from docopt import docopt
     args = docopt(DOC)
-    samplecsv = args['-c']
-    outdir = args['-d']
-
-    c = Capturer(outdir, samplecsv)
-    c.main()
+    Capturer(args['OUTDIR']).main()
