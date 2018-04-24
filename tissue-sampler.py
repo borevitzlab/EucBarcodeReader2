@@ -96,12 +96,10 @@ class Capturer(object):
         else:
             # Read list of existing sample & plate/well from CSV
             for rec in csv.DictReader(open(self.sample_csv)):
-                print(rec)
                 self.samples.add(rec["sample_id"])
                 self.platewell.add((rec["plate"], rec["well"]))
-            # set to last record
-            self.plate = rec["plate"]
-            self.well = W2N.get(rec["well"], -1)
+                self.plate = rec["plate"]
+                self.well = W2N.get(rec["well"], -1)
             print("Read", len(self.samples), "existing samples from output directory")
 
     def capture_sample(self):
